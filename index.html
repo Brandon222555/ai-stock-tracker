@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Stock Tracker — Live Portfolio</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d2e; --card-hover: #222640;
+    --accent: #6c5ce7; --accent2: #00cec9; --green: #00b894; --red: #d63031;
+    --gold: #fdcb6e; --teal: #00cec9; --comeback: #e84393; --text: #dfe6e9; --text-dim: #888da0; --border: #2d3045;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  .header { background: linear-gradient(135deg, #1a1d2e 0%, #2d1b69 100%); padding: 28px 40px 22px; border-bottom: 1px solid var(--border); }
+  .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+  .header h1 span { color: var(--accent); }
+  .header-sub { color: var(--text-dim); font-size: 14px; }
+  .header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+  .header-right { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .budget-group { display: flex; align-items: center; gap: 0; }
+  .budget-label { background: rgba(108,92,231,.25); color: var(--accent); font-size: 13px; font-weight: 700; padding: 10px 14px; border-radius: 8px 0 0 8px; border: 1px solid var(--accent); border-right: none; white-space: nowrap; }
+  .budget-input { background: rgba(108,92,231,.08); border: 1px solid var(--accent); border-radius: 0 8px 8px 0; color: #fff; font-size: 22px; font-weight: 700; padding: 7px 14px; width: 130px; outline: none; transition: .2s; }
+  .budget-input:focus { background: rgba(108,92,231,.18); box-shadow: 0 0 0 3px rgba(108,92,231,.25); }
+  .live-badge { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+  .live-dot { width: 8px; height: 8px; border-radius: 50%; animation: pulse 1.5s infinite; }
+  .live-dot.on { background: var(--green); }
+  .live-dot.off { background: var(--red); animation: none; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.3} }
+  .refresh-btn { background: var(--card); border: 1px solid var(--border); color: var(--text-dim); border-radius: 8px; padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer; transition: .15s; display: flex; align-items: center; gap: 6px; }
+  .refresh-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .refresh-btn.spinning svg { animation: spin .8s linear infinite; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  .kpi-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px,1fr)); gap: 12px; padding: 20px 40px; }
+  .kpi { background: var(--card); border-radius: 10px; padding: 14px 16px; }
+  .kpi-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 4px; }
+  .kpi-value { font-size: 18px; font-weight: 700; }
+  .tab-bar { display: flex; gap: 0; padding: 0 40px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+  .tab-btn { background: none; border: none; color: var(--text-dim); font-size: 14px; font-weight: 600; padding: 14px 20px; cursor: pointer; border-bottom: 2px solid transparent; transition: .2s; white-space: nowrap; }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .main { padding: 24px 40px; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  .stock-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; margin-bottom: 32px; }
+  .stock-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; transition: .2s; cursor: pointer; position: relative; }
+  .stock-card:hover { background: var(--card-hover); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.35); border-color: var(--accent); }
+  .stock-card .click-hint { position: absolute; top: 10px; right: 10px; font-size: 10px; color: var(--text-dim); opacity: 0; transition: .2s; background: rgba(0,0,0,.4); padding: 3px 8px; border-radius: 4px; }
+  .stock-card:hover .click-hint { opacity: 1; }
+  .stock-card .rising-star { position: absolute; top: 10px; right: 10px; font-size: 16px; }
+  .stock-card:hover .rising-star { display: none; }
+  .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .ticker { font-size: 18px; font-weight: 800; }
+  .company-name { font-size: 11px; color: var(--text-dim); margin-top: 1px; }
+  .badge { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; padding: 3px 8px; border-radius: 20px; }
+  .badge.large-cap { background: rgba(108,92,231,.15); color: var(--accent); }
+  .badge.pure-play { background: rgba(0,206,201,.15); color: var(--accent2); }
+  .badge.rising { background: rgba(253,203,110,.15); color: var(--gold); }
+  .badge.comeback { background: rgba(232,67,147,.15); color: var(--comeback); }
+  .price-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+  .price { font-size: 24px; font-weight: 700; }
+  .change { font-size: 12px; font-weight: 600; }
+  .change.up { color: var(--green); }
+  .change.down { color: var(--red); }
+  .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .metric { font-size: 11px; }
+  .metric-label { color: var(--text-dim); }
+  .metric-val { font-weight: 600; }
+  .sparkline-container { height: 36px; margin: 6px 0; }
+  .card-footer { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-dim); }
+  .filter-bar { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+  .filter-btn { background: var(--card); border: 1px solid var(--border); color: var(--text-dim); border-radius: 8px; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; transition: .15s; }
+  .filter-btn:hover, .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .filter-btn[data-filter="rising"].active { background: var(--gold); border-color: var(--gold); color: #000; }
+  .filter-btn[data-filter="comeback"].active { background: var(--comeback); border-color: var(--comeback); color: #fff; }
+
+  /* MODAL */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:1000; justify-content:center; align-items:flex-start; padding:30px 20px; overflow-y:auto; backdrop-filter:blur(4px); }
+  .modal-overlay.open { display:flex; }
+  .modal { background:var(--bg); border:1px solid var(--border); border-radius:16px; width:100%; max-width:780px; padding:0; position:relative; box-shadow:0 24px 80px rgba(0,0,0,.6); }
+  .modal-header { display:flex; justify-content:space-between; align-items:flex-start; padding:24px 28px 18px; border-bottom:1px solid var(--border); background:linear-gradient(135deg,var(--card) 0%,#1e1640 100%); border-radius:16px 16px 0 0; }
+  .modal-header .ticker { font-size:30px; }
+  .modal-header .company-name { font-size:13px; }
+  .modal-close { background:rgba(255,255,255,.08); border:1px solid var(--border); color:var(--text-dim); width:34px; height:34px; border-radius:8px; cursor:pointer; font-size:18px; display:flex; align-items:center; justify-content:center; transition:.15s; }
+  .modal-close:hover { background:var(--red); color:#fff; border-color:var(--red); }
+  .modal-body { padding:24px 28px; }
+  .modal-price-row { display:flex; align-items:baseline; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+  .modal-price { font-size:36px; font-weight:800; }
+  .modal-change { font-size:15px; font-weight:700; padding:4px 12px; border-radius:6px; }
+  .modal-change.up { background:rgba(0,184,148,.15); color:var(--green); }
+  .modal-change.down { background:rgba(214,48,49,.15); color:var(--red); }
+  .detail-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:12px; margin-bottom:24px; }
+  .detail-item { background:var(--card); border-radius:10px; padding:12px 14px; }
+  .detail-item .label { font-size:10px; text-transform:uppercase; letter-spacing:.8px; color:var(--text-dim); margin-bottom:3px; }
+  .detail-item .val { font-size:16px; font-weight:700; }
+  .detail-chart-wrap { background:var(--card); border-radius:12px; padding:18px; margin-bottom:20px; }
+  .detail-chart-wrap canvas { width:100%!important; max-height:200px; }
+  .thesis-box { background:var(--card); border-radius:12px; padding:18px; margin-bottom:16px; }
+  .thesis-box h4 { font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:var(--text-dim); margin-bottom:6px; }
+  .thesis-box p { font-size:13px; line-height:1.7; }
+  .detail-links { display:flex; gap:8px; flex-wrap:wrap; }
+  .detail-link { display:inline-flex; align-items:center; gap:5px; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:8px 14px; font-size:12px; font-weight:600; color:var(--accent); text-decoration:none; transition:.15s; }
+  .detail-link:hover { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .budget-calc-box { background:linear-gradient(135deg,rgba(108,92,231,.1),rgba(0,206,201,.08)); border:1px solid rgba(108,92,231,.3); border-radius:12px; padding:18px; margin-top:16px; }
+  .budget-calc-box h4 { font-size:14px; margin-bottom:6px; color:var(--accent); }
+  .budget-calc-row { display:flex; justify-content:space-between; font-size:14px; padding:5px 0; }
+  .budget-calc-row .val { font-weight:700; color:var(--accent); }
+
+  /* ALLOCATION */
+  .alloc-grid { display:grid; grid-template-columns:1fr 1fr; gap:24px; align-items:start; }
+  @media(max-width:860px){.alloc-grid{grid-template-columns:1fr}}
+  .alloc-table-wrap { background:var(--card); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+  .alloc-table { width:100%; border-collapse:collapse; }
+  .alloc-table th { text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.8px; color:var(--text-dim); padding:12px 14px; border-bottom:1px solid var(--border); }
+  .alloc-table td { padding:10px 14px; font-size:13px; border-bottom:1px solid var(--border); }
+  .alloc-table tr:last-child td { border-bottom:none; }
+  .alloc-table tr:hover { background:var(--card-hover); cursor:pointer; }
+  .alloc-table .ticker-col { font-weight:700; }
+  .alloc-table .shares-col { color:var(--accent); font-weight:600; }
+  .alloc-table .amount-col { font-weight:600; }
+  .chart-wrap { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; display:flex; flex-direction:column; align-items:center; }
+  .chart-wrap canvas { max-height:280px; }
+  .strategy-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px; margin-top:18px; }
+  .strat-card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px; cursor:pointer; transition:.2s; }
+  .strat-card:hover { border-color:var(--accent); }
+  .strat-card.selected { border-color:var(--accent); box-shadow:0 0 0 2px rgba(108,92,231,.3); }
+  .strat-card h3 { font-size:15px; margin-bottom:4px; }
+  .strat-card p { font-size:12px; color:var(--text-dim); line-height:1.5; }
+  .strat-icon { font-size:26px; margin-bottom:8px; }
+  .perf-chart-wrap { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:24px; margin-bottom:24px; }
+  .perf-chart-wrap canvas { width:100%!important; max-height:400px; }
+  .risk-section { margin-top:32px; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:24px; }
+  .risk-bar-track { height:8px; background:#2d3045; border-radius:4px; margin:12px 0 6px; }
+  .risk-bar-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,var(--green),#fdcb6e,var(--red)); }
+  .risk-labels { display:flex; justify-content:space-between; font-size:11px; color:var(--text-dim); }
+  .disclaimer { margin-top:40px; padding:20px; background:rgba(214,48,49,.08); border:1px solid rgba(214,48,49,.25); border-radius:10px; font-size:12px; color:var(--text-dim); line-height:1.6; }
+  .disclaimer strong { color:var(--red); }
+  .loading-overlay { position:fixed; inset:0; background:var(--bg); z-index:2000; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; transition:opacity .4s; }
+  .loading-overlay.done { opacity:0; pointer-events:none; }
+  .loader { width:48px; height:48px; border:4px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+  .loading-text { font-size:14px; color:var(--text-dim); }
+  .toast { position:fixed; bottom:24px; right:24px; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 20px; font-size:13px; z-index:3000; transform:translateY(80px); opacity:0; transition:.3s; box-shadow:0 8px 32px rgba(0,0,0,.4); }
+  .toast.show { transform:translateY(0); opacity:1; }
+  .toast.success { border-color:var(--green); }
+  .toast.error { border-color:var(--red); }
+  .last-updated { font-size:11px; color:var(--text-dim); text-align:right; padding:6px 40px; }
+  @media(max-width:600px){ .header,.kpi-strip,.main,.tab-bar{padding-left:16px;padding-right:16px} .stock-grid{grid-template-columns:1fr} .modal{margin:10px} .modal-body{padding:16px} .last-updated{padding:6px 16px} }
+</style>
+</head>
+<body>
+<div class="loading-overlay" id="loadingOverlay"><div class="loader"></div><div class="loading-text">Fetching live AI stock data...</div></div>
+<div class="toast" id="toast"></div>
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()"><div class="modal" id="modalContent"></div></div>
+
+<div class="header">
+  <div class="header-row">
+    <div>
+      <h1><span>AI</span> Stock Tracker</h1>
+      <p class="header-sub">25 AI stocks &bull; Live prices &bull; Click any stock for deep-dive details</p>
+    </div>
+    <div class="header-right">
+      <div class="live-badge"><div class="live-dot" id="liveDot"></div><span id="liveLabel">Connecting...</span></div>
+      <button class="refresh-btn" id="refreshBtn" onclick="refreshPrices()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Refresh
+      </button>
+      <div class="budget-group">
+        <div class="budget-label">$ Budget</div>
+        <input type="number" class="budget-input" id="budgetInput" value="500" min="1" step="50">
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="kpi-strip" id="kpiStrip"></div>
+<div class="last-updated" id="lastUpdated"></div>
+
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="stocks">All Stocks</button>
+  <button class="tab-btn" data-tab="allocator">Portfolio Allocator</button>
+  <button class="tab-btn" data-tab="performance">Performance</button>
+</div>
+
+<div class="main">
+<div class="tab-content active" id="tab-stocks">
+  <div class="filter-bar">
+    <button class="filter-btn active" data-filter="all">All (25)</button>
+    <button class="filter-btn" data-filter="large-cap">Large Cap</button>
+    <button class="filter-btn" data-filter="pure-play">Pure Play AI</button>
+    <button class="filter-btn" data-filter="rising">Rising Stars</button>
+    <button class="filter-btn" data-filter="comeback">Comeback Kings</button>
+  </div>
+  <div class="stock-grid" id="stockGrid"></div>
+</div>
+
+<div class="tab-content" id="tab-allocator">
+  <p style="color:var(--text-dim);margin-bottom:18px;font-size:14px;">Choose a strategy. Everything recalculates instantly when you change your budget above.</p>
+  <div class="strategy-cards" id="stratCards"></div>
+  <div class="alloc-section" id="allocSection" style="margin-top:24px;"></div>
+</div>
+
+<div class="tab-content" id="tab-performance">
+  <div class="perf-chart-wrap">
+    <h3 style="margin-bottom:16px;">YTD Performance Comparison (%)</h3>
+    <canvas id="perfChart"></canvas>
+  </div>
+  <div class="risk-section">
+    <h3 style="margin-bottom:4px;">Portfolio Risk Meter</h3>
+    <p style="font-size:13px;color:var(--text-dim);margin-bottom:8px;">Based on volatility of a mixed AI portfolio</p>
+    <div class="risk-bar-track"><div class="risk-bar-fill" style="width:62%"></div></div>
+    <div class="risk-labels"><span>Low</span><span>Moderate</span><span>High</span></div>
+    <p style="font-size:13px;color:var(--text-dim);margin-top:12px;">
+      A mix of large-cap, rising star, and comeback AI stocks carries <strong style="color:#fdcb6e;">moderate-to-high</strong> risk. Rising stars have momentum but elevated valuations. Comeback kings are beaten-down with analyst upside targets of 40-96%, but could fall further. Large caps anchor stability.
+    </p>
+  </div>
+</div>
+
+<div class="disclaimer">
+  <strong>Disclaimer:</strong> This dashboard is for informational and educational purposes only — not financial advice. No stock is "sure" to go up. Prices come from Finnhub's free API and may be delayed. "Rising Stars" and "Comeback Kings" labels reflect analyst consensus and momentum, not guarantees. Beaten-down stocks can fall further. Past performance doesn't guarantee future results. Always do your own research and consider consulting a licensed financial advisor. Investing involves risk — you could lose some or all of your money.
+</div>
+</div>
+
+<script>
+const FINNHUB_KEY = 'cvt2mupr01qhb8co7ic0cvt2mupr01qhb8co7icg';
+const API_BASE = 'https://finnhub.io/api/v1';
+let budget = 500, currentFilter = 'all', currentStrategy = 'balanced', chartInstances = {}, isLive = false;
+
+// =============== ALL 18 STOCKS ===============
+const stocks = [
+  // ===== LARGE CAP =====
+  { ticker:"NVDA", name:"NVIDIA Corporation", category:"large-cap",
+    price:181.19, prevClose:178.11, open:179.50, high:183.40, low:177.90, change:1.73, ytdChange:28.5,
+    marketCap:"4.43T", pe:48.2, sector:"Semiconductors", week52High:195.30, week52Low:87.50, avgVol:"312M",
+    spark:[142,148,155,150,163,158,170,165,172,178,175,181],
+    thesis:"Dominant AI chip maker. Data center revenue surging with Blackwell architecture.",
+    details:"NVIDIA designs GPUs and AI accelerators powering the vast majority of AI training. Their CUDA ecosystem creates a deep moat. Blackwell B200/GB200 chips are seeing massive hyperscaler demand. Rubin platform expected H2 2026.",
+    catalysts:["Blackwell chip ramp in full swing","Data center revenue grew 150%+ YoY","Rubin next-gen platform coming H2 2026","Expanding into automotive & robotics AI"],
+    risks:["Extremely high valuation","Export restrictions to China","Competition from AMD, custom chips","Cyclical semiconductor demand"]},
+  { ticker:"MSFT", name:"Microsoft Corporation", category:"large-cap",
+    price:372.28, prevClose:372.28, open:371.00, high:375.50, low:369.80, change:0.00, ytdChange:12.1,
+    marketCap:"2.77T", pe:32.5, sector:"Software / Cloud", week52High:420.80, week52Low:310.00, avgVol:"22M",
+    spark:[332,340,338,350,355,348,360,358,365,368,370,372],
+    thesis:"Azure AI and Copilot integration driving enterprise AI adoption.",
+    details:"Microsoft has deeply integrated AI across Azure OpenAI Service, GitHub Copilot (1.8M+ paid subs), Microsoft 365 Copilot, and Bing. Azure is #2 cloud and growing fast with AI workloads. $13B+ OpenAI partnership provides strong moat.",
+    catalysts:["Copilot monetization ramping across enterprise","Azure AI revenue growing 50%+ YoY","GitHub Copilot 1.8M+ paid subscribers","Strong enterprise contract pipeline"],
+    risks:["High valuation relative to growth","OpenAI partnership costs","Regulatory scrutiny in EU","Competition from Google Cloud, AWS"]},
+  { ticker:"GOOGL", name:"Alphabet Inc.", category:"large-cap",
+    price:331.25, prevClose:332.75, open:330.00, high:334.20, low:328.50, change:-0.45, ytdChange:8.3,
+    marketCap:"2.05T", pe:23.8, sector:"Tech / Search / Cloud", week52High:365.50, week52Low:275.00, avgVol:"25M",
+    spark:[306,310,315,308,320,325,318,328,330,326,332,331],
+    thesis:"Gemini AI models integrated across Search, Cloud, and Android.",
+    details:"Alphabet is one of the most diversified AI companies — Gemini models, Google Cloud AI, Waymo autonomous vehicles, and DeepMind research. AI Overviews are increasing engagement rather than cannibalizing ad revenue.",
+    catalysts:["Gemini 2.5 strong benchmark results","Google Cloud growing 28%+ with AI","Waymo expanding to new cities","YouTube AI features driving growth"],
+    risks:["DOJ antitrust ruling impact","AI could disrupt search model","High capex for AI infra","Competition from OpenAI/Microsoft"]},
+  { ticker:"META", name:"Meta Platforms, Inc.", category:"large-cap",
+    price:662.49, prevClose:634.53, open:639.37, high:666.26, low:639.37, change:4.41, ytdChange:18.7,
+    marketCap:"1.68T", pe:28.1, sector:"Social / AI", week52High:796.25, week52Low:479.80, avgVol:"18M",
+    spark:[558,570,585,595,610,590,620,635,640,648,655,662],
+    thesis:"Llama open-source AI + massive AI-powered ad revenue engine.",
+    details:"Meta became an AI powerhouse via Llama open-source models and AI-driven ad targeting. Advantage+ AI ad suite improved ROAS for advertisers. Instagram Reels and Facebook Feed are heavily AI-curated.",
+    catalysts:["Llama 4 model release boosting ecosystem","AI-driven ad revenue record margins","Ray-Ban Meta smart glasses traction","WhatsApp Business AI monetizing"],
+    risks:["Massive Reality Labs spending ($15B+/yr)","Regulatory headwinds in EU","TikTok competition","High stock price after big run"]},
+  { ticker:"AMZN", name:"Amazon.com, Inc.", category:"large-cap",
+    price:220.52, prevClose:213.76, open:215.00, high:222.10, low:214.80, change:3.16, ytdChange:15.2,
+    marketCap:"2.33T", pe:36.4, sector:"Cloud / E-commerce", week52High:248.00, week52Low:172.00, avgVol:"48M",
+    spark:[191,195,200,198,205,208,202,210,212,215,218,220],
+    thesis:"AWS Bedrock + custom Trainium chips = AI infrastructure powerhouse.",
+    details:"Amazon attacks AI from the infrastructure layer — AWS Bedrock lets enterprises run any foundation model, Trainium2 custom chips offer 4x price-performance. AWS remains #1 cloud with ~31% market share. $139B annual cash flow fuels AI investment.",
+    catalysts:["Trainium2 chips 4x price-performance","AWS Bedrock adoption accelerating","Alexa+ AI assistant launch","Amazon Q enterprise AI gaining traction"],
+    risks:["Retail margins under pressure","High capex cycle","Competition from Azure, GCP","Regulatory scrutiny globally"]},
+
+  // ===== RISING STARS (NEW — analyst consensus: likely to rise) =====
+  { ticker:"MU", name:"Micron Technology", category:"rising",
+    price:456.23, prevClose:448.10, open:445.00, high:463.95, low:439.32, change:1.82, ytdChange:318.0,
+    marketCap:"502B", pe:22.5, sector:"Memory / HBM", week52High:471.34, week52Low:65.65, avgVol:"38M",
+    spark:[95,120,155,190,240,280,310,350,380,420,445,456],
+    thesis:"HBM (High Bandwidth Memory) chips are the secret sauce powering every AI GPU. Massive shortage through 2028.",
+    details:"Micron's HBM3E chips are critical components in NVIDIA and AMD's AI accelerators. Revenue jumped 196% YoY in Q2 fiscal 2026 to $23.86B. HBM demand is projected to outstrip supply through 2028, giving Micron extraordinary pricing power. At 22.5x PE with 300%+ growth, it's one of the cheapest high-growth AI plays.",
+    catalysts:["HBM3E supply shortage through 2028","Revenue grew 196% YoY","Forward PE only 13.8x — cheapest AI growth stock","Every new AI chip needs more HBM"],
+    risks:["Cyclical memory industry","Stock already up 318% — pullback risk","Concentration in HBM revenue","Geopolitical risk (Korea/Taiwan supply chain)"]},
+  { ticker:"AVGO", name:"Broadcom Inc.", category:"rising",
+    price:393.00, prevClose:380.78, open:382.00, high:397.50, low:380.00, change:3.21, ytdChange:42.3,
+    marketCap:"860B", pe:35.8, sector:"Custom AI Chips / Networking", week52High:420.00, week52Low:152.00, avgVol:"28M",
+    spark:[276,285,310,325,340,330,350,360,370,378,385,393],
+    thesis:"Building custom AI chips for Meta, Google, and Anthropic. The picks-and-shovels play behind hyperscaler AI.",
+    details:"Broadcom designs custom AI accelerators (XPUs) and networking chips that connect AI data centers. They just signed multi-year deals with Meta, Google, and Anthropic. AI revenue is surging and analysts see strong upside. Average price target: $438.",
+    catalysts:["Multi-year Meta chip deal announced","Google & Anthropic custom chip contracts","AI networking revenue surging","29 analysts: Strong Buy consensus"],
+    risks:["High valuation after 42% run","Custom chip competition from Marvell","Dependent on hyperscaler spending","Integration risks from VMware acquisition"]},
+  { ticker:"TSM", name:"Taiwan Semiconductor (TSMC)", category:"rising",
+    price:375.10, prevClose:368.00, open:370.00, high:380.50, low:367.00, change:1.93, ytdChange:35.2,
+    marketCap:"975B", pe:28.0, sector:"Chip Foundry", week52High:395.00, week52Low:140.00, avgVol:"15M",
+    spark:[278,290,305,298,320,330,338,348,355,362,370,375],
+    thesis:"Makes the actual chips for NVIDIA, AMD, Apple, and everyone else. The foundational backbone of AI.",
+    details:"TSMC is the world's most advanced chip foundry, producing 3nm and 2nm chips for every major AI company. Without TSMC, there is no AI hardware revolution. They're spending $40B+ on capacity expansion. Average analyst target: $442.",
+    catalysts:["2nm process ramping for Apple/NVIDIA","$40B+ capacity expansion underway","AI chip demand insatiable","Arizona fab reduces geopolitical risk"],
+    risks:["China-Taiwan geopolitical tension","Massive capex requirements","Customer concentration (NVIDIA, Apple)","Advanced packaging capacity constraints"]},
+  { ticker:"AMD", name:"Advanced Micro Devices", category:"rising",
+    price:245.04, prevClose:240.00, open:242.00, high:248.50, low:240.00, change:2.10, ytdChange:159.0,
+    marketCap:"397B", pe:42.0, sector:"GPUs / CPUs / AI", week52High:267.08, week52Low:83.75, avgVol:"52M",
+    spark:[95,108,125,140,155,165,180,200,218,230,240,245],
+    thesis:"The #2 AI GPU maker gaining serious ground on NVIDIA with MI300X/MI350 chips.",
+    details:"AMD's MI300X AI accelerator is winning enterprise and cloud customers who want an alternative to NVIDIA. Data center revenue is the fastest-growing segment. MI350 (next-gen) expected to close the gap further. 159% stock gain in the past year shows market confidence.",
+    catalysts:["MI350 launch expected to rival NVIDIA H200","Data center GPU revenue tripling","Winning Microsoft, Meta, Oracle contracts","CPU market share gains from Intel"],
+    risks:["CUDA ecosystem advantage for NVIDIA","High valuation at 42x PE","Execution risk on MI350 timeline","Stiff competition from custom chips"]},
+  { ticker:"CRWD", name:"CrowdStrike Holdings", category:"rising",
+    price:411.16, prevClose:398.00, open:400.00, high:415.00, low:397.00, change:3.31, ytdChange:-12.3,
+    marketCap:"100B", pe:92.0, sector:"AI Cybersecurity", week52High:566.90, week52Low:342.72, avgVol:"5.5M",
+    spark:[469,455,440,425,430,420,405,395,390,400,405,411],
+    thesis:"AI-native cybersecurity platform. Every company needs AI security as AI threats rise.",
+    details:"CrowdStrike's Falcon platform uses AI to detect and prevent cyber threats in real-time across endpoints, cloud, and identity. As AI-powered cyberattacks increase, demand for AI-native defense grows. They're down from highs after the 2024 outage incident but analysts see 18%+ upside with a $566 price target.",
+    catalysts:["AI-powered threats driving demand","Falcon platform expanding to cloud security","$566 average analyst price target (18%+ upside)","ARR growing 25%+ YoY"],
+    risks:["Still recovering from July 2024 outage reputation hit","High PE ratio at 92x","Down 12% YTD — sentiment mixed","Competition from Palo Alto, SentinelOne"]},
+  { ticker:"SNOW", name:"Snowflake Inc.", category:"rising",
+    price:223.79, prevClose:218.50, open:220.00, high:226.00, low:218.00, change:2.42, ytdChange:22.5,
+    marketCap:"75B", pe:-180.0, sector:"AI Data Cloud", week52High:245.00, week52Low:120.00, avgVol:"8M",
+    spark:[183,188,195,192,200,205,208,212,215,218,220,224],
+    thesis:"The AI data platform. Companies need their data organized before AI can use it — Snowflake does that.",
+    details:"Snowflake's Data Cloud lets enterprises store, analyze, and share data at scale. Their Cortex AI layer now lets customers build AI apps directly on their data without moving it. Product revenue growing 28%+ YoY. Analysts have a Strong Buy consensus with $285 target (21% upside).",
+    catalysts:["Cortex AI turning data into AI platform","Product revenue growing 28%+ YoY","$285 analyst price target (21% upside)","Enterprise data spending increasing"],
+    risks:["Not yet profitable","High competition from Databricks","Consumption-based model = revenue volatility","Large customer concentration"]},
+  { ticker:"ARM", name:"Arm Holdings plc", category:"rising",
+    price:150.96, prevClose:148.00, open:149.00, high:153.50, low:147.50, change:2.00, ytdChange:15.8,
+    marketCap:"158B", pe:210.0, sector:"Chip Architecture / IP", week52High:188.00, week52Low:98.00, avgVol:"10M",
+    spark:[130,135,132,140,142,138,145,148,150,152,149,151],
+    thesis:"ARM architecture powers 99% of smartphone CPUs and is now powering AI edge devices and data centers.",
+    details:"Arm doesn't make chips — it licenses the architecture that everyone builds on. 99% of smartphone CPUs use ARM. Now expanding into AI data center CPUs (competing with x86) and edge AI devices. Launching their own CPU products on top of the royalty business. Projected 20% CAGR in royalty revenue through 2031.",
+    catalysts:["ARM AGI CPU launch — own products","20% royalty revenue CAGR through 2031","AI edge/IoT devices all use ARM","Data center ARM CPUs gaining share"],
+    risks:["Very high PE at 210x","Qualcomm licensing disputes","Revenue growth must justify valuation","Competition from RISC-V open standard"]},
+  { ticker:"CIEN", name:"Ciena Corporation", category:"rising",
+    price:479.09, prevClose:467.19, open:470.00, high:488.83, low:462.00, change:2.55, ytdChange:814.0,
+    marketCap:"38B", pe:55.0, sector:"AI Networking / Optical", week52High:496.02, week52Low:52.50, avgVol:"4M",
+    spark:[58,85,120,170,220,280,340,380,420,460,475,479],
+    thesis:"The optical networking backbone of AI. Every AI data center needs ultra-fast data pipes — Ciena builds them.",
+    details:"Ciena makes optical networking equipment that enables high-speed data transport for AI workloads. As AI clusters scale, the demand for bandwidth between GPUs and data centers explodes. Ciena is up an staggering 814% YTD — the #1 performing AI-adjacent stock. JPMorgan raised target to $550.",
+    catalysts:["#1 performing AI stock in 2026 (+814%)","JPMorgan price target raised to $550","AI bandwidth demand is insatiable","Multi-year networking upgrade cycle"],
+    risks:["Stock up 814% — extreme pullback risk","Small company, less liquid","Dependent on data center capex cycle","Competition from Cisco, Arista"]},
+
+  // ===== COMEBACK KINGS (beaten-down, analysts say BUY — huge upside) =====
+  { ticker:"ORCL", name:"Oracle Corporation", category:"comeback",
+    price:169.81, prevClose:163.00, open:164.00, high:171.50, low:162.80, change:4.17, ytdChange:-12.3,
+    marketCap:"475B", pe:28.5, sector:"Cloud / Database / AI", week52High:345.72, week52Low:121.24, avgVol:"18M",
+    spark:[345,310,280,240,200,170,145,130,142,155,163,170],
+    thesis:"Down 51% from highs but backlog exploded to $553B. Cloud infrastructure revenue up 84%. Analysts see 54% upside.",
+    details:"Oracle crashed from $346 to $121 — investors overreacted to a single earnings miss. But the business is booming: cloud infrastructure revenue grew 84% YoY, total backlog surged to $553B, and they're building massive AI data centers with Bloom Energy. Analyst consensus price target: $261 (54% upside).",
+    catalysts:["$553B remaining performance obligation (backlog)","Cloud infrastructure revenue up 84% YoY","AI data center expansion with Bloom Energy","$261 analyst target = 54% upside from here"],
+    risks:["Still digesting the -51% crash","High debt from acquisitions","Competition from AWS, Azure, GCP","Revenue growth needs to accelerate"]},
+  { ticker:"CRM", name:"Salesforce, Inc.", category:"comeback",
+    price:172.82, prevClose:170.00, open:171.00, high:175.50, low:169.50, change:1.66, ytdChange:-22.8,
+    marketCap:"167B", pe:25.0, sector:"Enterprise AI / CRM", week52High:296.05, week52Low:174.57, avgVol:"12M",
+    spark:[296,280,265,250,230,215,200,190,185,178,175,173],
+    thesis:"Down 42% from highs but Agentforce AI product revenue grew 330%. Near 52-week low with massive rebound potential.",
+    details:"Salesforce hit 52-week lows despite strong fundamentals. Revenue reached $10.3B with 9% growth, and their Agentforce AI product is exploding — ARR grew 330% YoY. Remaining performance obligation soared 12% to $59.5B. The market is punishing growth deceleration but ignoring the AI transformation story.",
+    catalysts:["Agentforce AI ARR grew 330% YoY","$59.5B remaining performance obligation","Near 52-week low — deep value","Enterprise AI spending accelerating"],
+    risks:["Revenue growth slowed to 9%","Down 42% from all-time high","AI products still early monetization","Competition from Microsoft Dynamics + Copilot"]},
+  { ticker:"ADBE", name:"Adobe Inc.", category:"comeback",
+    price:244.66, prevClose:235.72, open:239.20, high:245.55, low:239.20, change:3.79, ytdChange:-18.5,
+    marketCap:"108B", pe:22.0, sector:"Creative AI / Software", week52High:422.95, week52Low:224.13, avgVol:"5M",
+    spark:[423,400,375,350,320,295,270,255,240,232,236,245],
+    thesis:"Down 42% from highs but posted record Q4 sales. Firefly AI generative tools driving massive adoption. GF Score: 88/100.",
+    details:"Adobe is deeply undervalued after a harsh selloff driven by AI disruption fears. But Adobe IS the AI disruptor in creative tools — Firefly AI has generated 12B+ images. Record Q4 revenue of $5.6B. The stock trades at just 22x PE, the cheapest it's been in a decade. GuruFocus rates it 88/100 (undervalued).",
+    catalysts:["Firefly AI: 12B+ images generated","Record Q4 revenue of $5.6B","PE of 22x — cheapest in a decade","GuruFocus score 88/100 (undervalued)"],
+    risks:["AI tools like Midjourney/Canva competing","Creative Cloud growth decelerating","Market fears AI disruption of Adobe","Down 42% — could go lower"]},
+  { ticker:"INTC", name:"Intel Corporation", category:"comeback",
+    price:64.60, prevClose:63.81, open:63.00, high:65.18, low:62.80, change:1.24, ytdChange:31.8,
+    marketCap:"277B", pe:35.0, sector:"Chips / Foundry", week52High:65.18, week52Low:18.50, avgVol:"65M",
+    spark:[49,42,38,35,30,28,32,38,45,52,58,65],
+    thesis:"The ultimate comeback. Was left for dead at $18, now $65. 18A foundry tech winning Tesla and Google contracts. Analyst target: $70.",
+    details:"Intel nearly died — stock hit $18 in 2025. But the 18A manufacturing process is a game-changer, winning deals with Tesla's Terafab and Google for AI chip infrastructure. Stock is up 250%+ from the bottom. KeyBanc raised target to $70. This is a turnaround story years in the making.",
+    catalysts:["18A foundry tech winning major contracts","Tesla Terafab + Google partnerships","Up 250%+ from bottom — momentum building","KeyBanc target $70 (Overweight)"],
+    risks:["Still well below all-time highs","Foundry profitability years away","Massive capex spending required","AMD/NVIDIA dominate AI chips"]},
+  { ticker:"S", name:"SentinelOne, Inc.", category:"comeback",
+    price:13.26, prevClose:12.72, open:12.50, high:13.50, low:12.40, change:4.25, ytdChange:-32.1,
+    marketCap:"4.2B", pe:-45.0, sector:"AI Cybersecurity", week52High:21.40, week52Low:11.81, avgVol:"8M",
+    spark:[21.4,20.0,18.5,17.0,15.5,14.5,13.8,13.0,12.5,12.0,12.7,13.3],
+    thesis:"Hit ALL-TIME LOW but 24 analysts say Buy, zero say Sell. Average target $18.56 = 40% upside. Street-high: $26 = 96% upside.",
+    details:"SentinelOne just hit an all-time low at $11.81 — and Wall Street thinks it's a screaming buy. 24 out of 40 analysts rate it Buy, zero say Sell. Their AI-native Singularity platform competes with CrowdStrike at a fraction of the market cap. Revenue growing 30%+ YoY. The Street-high target of $26 implies 96% upside.",
+    catalysts:["ALL-TIME LOW — maximum fear = opportunity","24 analysts Buy, 0 Sell","$18.56 avg target (40% upside)","Street-high $26 target (96% upside)"],
+    risks:["Not profitable yet","Smaller than CrowdStrike in every metric","Stock in sustained downtrend","Cybersecurity spending could slow"]},
+  { ticker:"MRVL", name:"Marvell Technology", category:"comeback",
+    price:128.49, prevClose:119.89, open:120.50, high:129.84, low:119.00, change:7.17, ytdChange:29.7,
+    marketCap:"112B", pe:78.0, sector:"AI Chips / Optical", week52High:129.84, week52Low:48.00, avgVol:"18M",
+    spark:[48,55,62,68,75,80,88,95,105,115,120,128],
+    thesis:"Was crushed to $48, now hitting all-time highs. NVIDIA optical interconnect partnership. B. Riley target: $156 = 21% upside.",
+    details:"Marvell was beaten down to $48 from highs near $90 in the 2025 AI selloff. Now it's surging — up 20% in 5 days — after NVIDIA tapped them for optical interconnect technology. Barclays upgraded to Overweight with $150 target. B. Riley raised to $156. Custom AI silicon and optical networking are their one-two punch.",
+    catalysts:["NVIDIA optical interconnect partnership","Barclays upgrade to Overweight, $150 target","B. Riley target raised to $156","Up 167% from bottom — momentum breakout"],
+    risks:["High PE of 78x","Competition from Broadcom in custom AI chips","Revenue still needs to prove sustainability","Stock already recovered sharply"]},
+  { ticker:"SNAP", name:"Snap Inc.", category:"comeback",
+    price:6.04, prevClose:5.65, open:5.70, high:6.20, low:5.60, change:6.90, ytdChange:-30.6,
+    marketCap:"10B", pe:-12.0, sector:"Social / AI + AR", week52High:12.50, week52Low:4.80, avgVol:"32M",
+    spark:[8.70,8.20,7.50,7.00,6.50,6.00,5.50,5.20,5.00,5.30,5.65,6.04],
+    thesis:"Cheapest social media stock. AI layoffs to save $500M/yr. Q1 revenue beat. Activist investors pushing transformation.",
+    details:"Snap is the cheapest way to play the social media AI pivot. They cut 16% of staff citing AI efficiencies, saving $500M/yr. Q1 revenue beat at $1.53B (+12% YoY). Activist investors are pushing hard for value unlock. AR glasses and AI-powered ad targeting are the catalysts. At $6, you get 83 shares for $500.",
+    catalysts:["AI layoffs saving $500M/year","Q1 revenue beat: $1.53B (+12% YoY)","Activist investor pressure for value unlock","AR glasses + AI ad targeting catalysts"],
+    risks:["Not profitable","Down 52% from 52-week high","Competition from TikTok, Instagram","Unclear path to sustained profitability"]},
+
+  // ===== PURE PLAY =====
+  { ticker:"PLTR", name:"Palantir Technologies", category:"pure-play",
+    price:139.53, prevClose:136.60, open:134.93, high:139.71, low:134.93, change:2.15, ytdChange:45.8,
+    marketCap:"326B", pe:185.0, sector:"AI Analytics / Defense", week52High:152.00, week52Low:58.00, avgVol:"65M",
+    spark:[96,102,108,115,110,118,125,120,128,132,135,139],
+    thesis:"AIP platform winning major government & enterprise contracts. Revenue accelerating.",
+    details:"Palantir's AIP lets organizations deploy AI on their own data without data scientists. Government business is rock-solid, commercial revenue growing faster. Boot camp go-to-market converting at 30%+ rate.",
+    catalysts:["AIP boot camps converting at 30%+","US government AI spending increasing","Commercial revenue growing 50%+ YoY","NATO and allied contracts expanding"],
+    risks:["Extremely high PE (185x)","Stock tripled — pullback risk","Government contract concentration","Competition from Databricks, Snowflake AI"]},
+  { ticker:"AI", name:"C3.ai, Inc.", category:"pure-play",
+    price:8.48, prevClose:8.58, open:8.42, high:8.58, low:8.42, change:-1.20, ytdChange:-32.5,
+    marketCap:"2.7B", pe:-15.0, sector:"Enterprise AI", week52High:42.00, week52Low:7.50, avgVol:"8M",
+    spark:[12.5,11.8,11.0,10.2,9.8,9.5,9.0,8.8,8.5,8.6,8.5,8.48],
+    thesis:"Enterprise AI platform. Federal contracts but struggling with profitability. High risk, high potential.",
+    details:"C3.ai provides enterprise AI for energy, manufacturing, and defense. Partnerships with Microsoft & AWS. Revenue growth slowed and they remain unprofitable with high burn rate.",
+    catalysts:["Federal AI spending tailwinds","Microsoft Azure partnership","New generative AI products","Potential acquisition target"],
+    risks:["Not profitable, negative PE","Revenue growth decelerated","Down 75%+ from highs","Small customer concentration"]},
+  { ticker:"SOUN", name:"SoundHound AI, Inc.", category:"pure-play",
+    price:7.05, prevClose:7.25, open:7.14, high:7.14, low:6.90, change:-2.80, ytdChange:-28.4,
+    marketCap:"2.8B", pe:-22.0, sector:"Voice AI", week52High:25.00, week52Low:5.50, avgVol:"42M",
+    spark:[9.85,9.20,8.80,8.50,8.10,7.90,7.50,7.40,7.20,7.10,7.08,7.05],
+    thesis:"Voice AI for restaurants, auto, and IoT. Growing revenue but not yet profitable.",
+    details:"SoundHound provides voice AI for restaurant ordering (White Castle, Jersey Mike's), in-car assistants (Stellantis, Hyundai), and smart devices. Revenue growing rapidly with $1B+ backlog.",
+    catalysts:["Restaurant AI ordering expanding","8+ automotive OEM partnerships","$1B+ revenue backlog","Strong Buy consensus, 110%+ upside"],
+    risks:["Not profitable, burning cash","Down 70%+ from highs","Small revenue base (~$80M/yr)","Competitive voice AI market"]},
+  { ticker:"BBAI", name:"BigBear.ai Holdings", category:"pure-play",
+    price:3.79, prevClose:3.51, open:3.55, high:3.81, low:3.51, change:7.95, ytdChange:-18.0,
+    marketCap:"920M", pe:-8.5, sector:"Defense AI", week52High:8.50, week52Low:2.10, avgVol:"28M",
+    spark:[4.62,4.40,4.20,4.00,3.80,3.60,3.50,3.40,3.55,3.65,3.72,3.79],
+    thesis:"AI for national security & defense. Micro-cap with high upside but very volatile.",
+    details:"BigBear.ai provides AI analytics for defense, intelligence, and commercial customers. Recent new contracts and leadership hires sparked optimism.",
+    catalysts:["New defense AI contracts","Leadership bench strengthened","US defense AI budget growing","Potential M&A target"],
+    risks:["Micro-cap, very volatile","Not profitable","Down 55%+ from highs","Limited revenue visibility"]},
+  { ticker:"PATH", name:"UiPath, Inc.", category:"pure-play",
+    price:9.94, prevClose:10.09, open:10.00, high:10.15, low:9.85, change:-1.50, ytdChange:-33.3,
+    marketCap:"5.7B", pe:-30.0, sector:"RPA / AI Automation", week52High:19.29, week52Low:8.80, avgVol:"12M",
+    spark:[14.90,14.00,13.20,12.50,11.80,11.20,10.80,10.50,10.20,10.10,10.00,9.94],
+    thesis:"RPA leader adding AI agents. Strong balance sheet but growth has slowed.",
+    details:"UiPath leads Robotic Process Automation, pivoting to AI-powered automation with agentic capabilities. Strong $1.9B cash position but revenue growth slowed to single digits.",
+    catalysts:["AI agent capabilities launching","$1.9B cash balance sheet","Potential buyout target","Enterprise automation TAM growing"],
+    risks:["Revenue growth slowing to ~5%","Down 45% from 52-week high","CEO transition uncertainty","Competition from Microsoft Power Automate"]}
+];
+
+// =============== STRATEGIES ===============
+const strategies = [
+  { id:"balanced", icon:"⚖️", name:"Balanced Growth",
+    desc:"Mix of all categories. Stability, momentum, and comeback upside.",
+    alloc:{ NVDA:0.08, MSFT:0.06, GOOGL:0.04, META:0.04, AMZN:0.04, MU:0.07, AVGO:0.06, TSM:0.04, AMD:0.04, CRWD:0.03, SNOW:0.03, ARM:0.03, CIEN:0.03, ORCL:0.05, CRM:0.05, ADBE:0.05, INTC:0.04, S:0.03, MRVL:0.04, SNAP:0.02, PLTR:0.05, SOUN:0.02, BBAI:0.02, AI:0.02, PATH:0.02 }},
+  { id:"conservative", icon:"🛡️", name:"Conservative / Safe",
+    desc:"70% large-cap & proven names. Lower risk, steadier returns.",
+    alloc:{ NVDA:0.14, MSFT:0.10, GOOGL:0.08, META:0.06, AMZN:0.06, MU:0.06, AVGO:0.05, TSM:0.05, AMD:0.03, CRWD:0.02, SNOW:0.02, ARM:0.02, CIEN:0.02, ORCL:0.04, CRM:0.04, ADBE:0.04, INTC:0.03, S:0.02, MRVL:0.03, SNAP:0.01, PLTR:0.03, SOUN:0.01, BBAI:0.01, AI:0.01, PATH:0.02 }},
+  { id:"momentum", icon:"🔥", name:"Rising Stars Focus",
+    desc:"Heavy on momentum stocks analysts say will surge. Higher risk, higher ceiling.",
+    alloc:{ NVDA:0.06, MSFT:0.03, GOOGL:0.02, META:0.02, AMZN:0.02, MU:0.10, AVGO:0.09, TSM:0.06, AMD:0.08, CRWD:0.05, SNOW:0.05, ARM:0.04, CIEN:0.05, ORCL:0.03, CRM:0.03, ADBE:0.03, INTC:0.03, S:0.03, MRVL:0.05, SNAP:0.02, PLTR:0.05, SOUN:0.02, BBAI:0.01, AI:0.01, PATH:0.02 }},
+  { id:"comeback", icon:"🏆", name:"Comeback Kings",
+    desc:"Heavy on beaten-down stocks at or near 52-week lows with huge analyst upside targets.",
+    alloc:{ NVDA:0.04, MSFT:0.03, GOOGL:0.02, META:0.02, AMZN:0.02, MU:0.04, AVGO:0.03, TSM:0.02, AMD:0.03, CRWD:0.03, SNOW:0.03, ARM:0.02, CIEN:0.02, ORCL:0.10, CRM:0.10, ADBE:0.10, INTC:0.08, S:0.08, MRVL:0.06, SNAP:0.05, PLTR:0.03, SOUN:0.02, BBAI:0.01, AI:0.01, PATH:0.01 }},
+  { id:"aggressive", icon:"🚀", name:"Aggressive / High Risk",
+    desc:"Heavy on speculative small-caps and deep-value plays. Biggest swings.",
+    alloc:{ NVDA:0.04, MSFT:0.02, GOOGL:0.02, META:0.02, AMZN:0.02, MU:0.04, AVGO:0.03, TSM:0.02, AMD:0.04, CRWD:0.03, SNOW:0.03, ARM:0.02, CIEN:0.04, ORCL:0.04, CRM:0.04, ADBE:0.04, INTC:0.05, S:0.06, MRVL:0.04, SNAP:0.06, PLTR:0.10, SOUN:0.08, BBAI:0.06, AI:0.04, PATH:0.02 }}
+];
+
+// =============== LIVE API ===============
+async function fetchLiveQuote(ticker) {
+  try {
+    const r = await fetch(`${API_BASE}/quote?symbol=${ticker}&token=${FINNHUB_KEY}`);
+    if(!r.ok) throw 0;
+    const d = await r.json();
+    if(d.c && d.c > 0) return { current:d.c, change:d.dp, prevClose:d.pc, open:d.o, high:d.h, low:d.l };
+    return null;
+  } catch { return null; }
+}
+
+async function refreshPrices() {
+  const btn = document.getElementById('refreshBtn');
+  btn.classList.add('spinning');
+  document.getElementById('liveLabel').textContent = 'Updating...';
+  let success = 0;
+  const results = await Promise.allSettled(
+    stocks.map(async s => {
+      const q = await fetchLiveQuote(s.ticker);
+      if(q){ s.price=q.current; s.change=q.change; s.prevClose=q.prevClose; s.open=q.open; s.high=q.high; s.low=q.low; s.spark.push(q.current); if(s.spark.length>12)s.spark.shift(); success++; }
+    })
+  );
+  btn.classList.remove('spinning');
+  isLive = success > 0;
+  const dot = document.getElementById('liveDot'), label = document.getElementById('liveLabel');
+  if(isLive){ dot.className='live-dot on'; label.textContent=`Live (${success}/${stocks.length})`; showToast(`Updated ${success} stock prices`,'success'); }
+  else { dot.className='live-dot off'; label.textContent='Using cached data'; showToast('API limit reached — using cached prices','error'); }
+  const now = new Date();
+  document.getElementById('lastUpdated').textContent = `Last updated: ${now.toLocaleString()} ${isLive?'(Live)':'(Cached — Apr 15, 2026)'}`;
+  renderAll();
+}
+
+function showToast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = `toast ${type} show`;
+  setTimeout(()=>t.classList.remove('show'), 3000);
+}
+
+document.getElementById('budgetInput').addEventListener('input', e => {
+  const v = parseFloat(e.target.value);
+  if(!isNaN(v) && v > 0){ budget = v; renderAll(); }
+});
+
+function renderAll() {
+  Object.values(chartInstances).forEach(c => { try{c.destroy()}catch{} });
+  chartInstances = {};
+  renderKPIs(); renderStockCards(currentFilter); renderStrategies(); renderPerfChart();
+  if(currentStrategy) selectStrategy(currentStrategy);
+}
+
+// =============== KPIs ===============
+function renderKPIs() {
+  const avgYTD = (stocks.reduce((s,st)=>s+st.ytdChange,0)/stocks.length).toFixed(1);
+  const best = stocks.reduce((a,b)=>a.ytdChange>b.ytdChange?a:b);
+  const rising = stocks.filter(s=>s.category==='rising').length;
+  const comebacks = stocks.filter(s=>s.category==='comeback').length;
+  const affordable = stocks.filter(s=>s.price<=budget).length;
+  document.getElementById('kpiStrip').innerHTML = `
+    <div class="kpi"><div class="kpi-label">Stocks Tracked</div><div class="kpi-value">${stocks.length}</div></div>
+    <div class="kpi"><div class="kpi-label">Avg YTD Return</div><div class="kpi-value" style="color:${parseFloat(avgYTD)>=0?'var(--green)':'var(--red)'}">${avgYTD}%</div></div>
+    <div class="kpi"><div class="kpi-label">Top Performer</div><div class="kpi-value" style="color:var(--green)">${best.ticker} +${best.ytdChange}%</div></div>
+    <div class="kpi"><div class="kpi-label">Rising Stars</div><div class="kpi-value" style="color:var(--gold)">${rising}</div></div>
+    <div class="kpi"><div class="kpi-label">Comeback Kings</div><div class="kpi-value" style="color:var(--comeback)">${comebacks}</div></div>
+    <div class="kpi"><div class="kpi-label">Affordable</div><div class="kpi-value">${affordable} of ${stocks.length}</div></div>
+    <div class="kpi"><div class="kpi-label">Your Budget</div><div class="kpi-value" style="color:var(--accent)">$${budget.toLocaleString()}</div></div>
+  `;
+}
+
+// =============== STOCK CARDS ===============
+function renderStockCards(filter='all') {
+  currentFilter = filter;
+  const grid = document.getElementById('stockGrid');
+  const filtered = filter==='all' ? stocks : stocks.filter(s=>s.category===filter);
+  grid.innerHTML = filtered.map(s => {
+    const up = s.change >= 0;
+    const shares = Math.floor(budget / s.price);
+    const badgeMap = {'large-cap':['large-cap','Large Cap'],'rising':['rising','Rising Star'],'comeback':['comeback','Comeback'],'pure-play':['pure-play','Pure Play']};
+    const [badgeClass,badgeText] = badgeMap[s.category]||['pure-play','Pure Play'];
+    const iconMap = {'rising':'⭐','comeback':'🔄'};
+    const cardIcon = iconMap[s.category]||'';
+    return `
+      <div class="stock-card" onclick="openModal('${s.ticker}')">
+        <span class="click-hint">Click for details</span>
+        ${cardIcon?`<span class="rising-star">${cardIcon}</span>`:''}
+        <div class="card-top">
+          <div><div class="ticker">${s.ticker}</div><div class="company-name">${s.name}</div></div>
+          <span class="badge ${badgeClass}">${badgeText}</span>
+        </div>
+        <div class="sparkline-container"><canvas id="spark-${s.ticker}" height="36"></canvas></div>
+        <div class="price-row">
+          <span class="price">$${s.price.toFixed(2)}</span>
+          <span class="change ${up?'up':'down'}">${up?'+':''}${s.change.toFixed(2)}%</span>
+        </div>
+        <div class="metrics">
+          <div class="metric"><span class="metric-label">Mkt Cap</span><br><span class="metric-val">${s.marketCap}</span></div>
+          <div class="metric"><span class="metric-label">P/E</span><br><span class="metric-val">${s.pe>0?s.pe.toFixed(1):'N/A'}</span></div>
+          <div class="metric"><span class="metric-label">52w</span><br><span class="metric-val">$${s.week52Low}–$${s.week52High}</span></div>
+          <div class="metric"><span class="metric-label">YTD</span><br><span class="metric-val" style="color:${s.ytdChange>=0?'var(--green)':'var(--red)'}">${s.ytdChange>=0?'+':''}${s.ytdChange}%</span></div>
+        </div>
+        <div class="card-footer">
+          $${budget.toLocaleString()} buys ~<strong style="color:var(--accent)">${shares} share${shares!==1?'s':''}</strong>
+          ${shares===0?' <span style="color:var(--red)">(need $'+s.price.toFixed(0)+'+)</span>':''}
+        </div>
+      </div>`;
+  }).join('');
+
+  filtered.forEach(s => {
+    const ctx = document.getElementById(`spark-${s.ticker}`);
+    if(!ctx) return;
+    const c = new Chart(ctx, {
+      type:'line',
+      data:{ labels:s.spark.map((_,i)=>i), datasets:[{ data:s.spark, borderColor:s.ytdChange>=0?'#00b894':'#d63031', borderWidth:2, fill:true, backgroundColor:s.ytdChange>=0?'rgba(0,184,148,.08)':'rgba(214,48,49,.08)', pointRadius:0, tension:0.4 }] },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{enabled:false}}, scales:{x:{display:false},y:{display:false}} }
+    });
+    chartInstances['spark-'+s.ticker] = c;
+  });
+}
+
+// =============== DETAIL MODAL ===============
+function openModal(ticker) {
+  const s = stocks.find(st=>st.ticker===ticker);
+  if(!s) return;
+  const up = s.change>=0;
+  const shares = Math.floor(budget/s.price);
+  const cost = (shares*s.price).toFixed(2);
+  const remaining = (budget - shares*s.price).toFixed(2);
+  const pctOf52High = ((s.price/s.week52High)*100).toFixed(0);
+  const mBadgeMap = {'large-cap':['large-cap','Large Cap'],'rising':['rising','Rising Star'],'comeback':['comeback','Comeback King'],'pure-play':['pure-play','Pure Play']};
+  const [badgeClass,badgeText] = mBadgeMap[s.category]||['pure-play','Pure Play'];
+
+  document.getElementById('modalContent').innerHTML = `
+    <div class="modal-header">
+      <div>
+        <div class="ticker">${s.ticker} <span class="badge ${badgeClass}" style="font-size:11px;vertical-align:middle;">${badgeText}</span></div>
+        <div class="company-name">${s.name} &bull; ${s.sector}</div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-price-row">
+        <span class="modal-price">$${s.price.toFixed(2)}</span>
+        <span class="modal-change ${up?'up':'down'}">${up?'+':''}${s.change.toFixed(2)}%</span>
+        <span style="font-size:12px;color:var(--text-dim)">Prev: $${s.prevClose.toFixed(2)}</span>
+      </div>
+      <div class="detail-grid">
+        <div class="detail-item"><div class="label">Open</div><div class="val">$${s.open.toFixed(2)}</div></div>
+        <div class="detail-item"><div class="label">High</div><div class="val" style="color:var(--green)">$${s.high.toFixed(2)}</div></div>
+        <div class="detail-item"><div class="label">Low</div><div class="val" style="color:var(--red)">$${s.low.toFixed(2)}</div></div>
+        <div class="detail-item"><div class="label">Market Cap</div><div class="val">${s.marketCap}</div></div>
+        <div class="detail-item"><div class="label">P/E Ratio</div><div class="val">${s.pe>0?s.pe.toFixed(1):'N/A'}</div></div>
+        <div class="detail-item"><div class="label">YTD Return</div><div class="val" style="color:${s.ytdChange>=0?'var(--green)':'var(--red)'}">${s.ytdChange>=0?'+':''}${s.ytdChange}%</div></div>
+        <div class="detail-item"><div class="label">52w High</div><div class="val">$${s.week52High.toFixed(2)}</div></div>
+        <div class="detail-item"><div class="label">52w Low</div><div class="val">$${s.week52Low.toFixed(2)}</div></div>
+        <div class="detail-item"><div class="label">% of 52w High</div><div class="val">${pctOf52High}%</div></div>
+        <div class="detail-item"><div class="label">Avg Volume</div><div class="val">${s.avgVol}</div></div>
+      </div>
+      <div class="detail-chart-wrap">
+        <h4 style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">RECENT TREND</h4>
+        <canvas id="detailChart" height="180"></canvas>
+      </div>
+      <div class="thesis-box">
+        <h4>Investment Thesis</h4>
+        <p>${s.details}</p>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;">
+        <div class="thesis-box" style="margin:0;"><h4 style="color:var(--green);">Catalysts (Bull Case)</h4><ul style="margin:0;padding-left:16px;font-size:12px;line-height:1.8;">${s.catalysts.map(c=>`<li>${c}</li>`).join('')}</ul></div>
+        <div class="thesis-box" style="margin:0;"><h4 style="color:var(--red);">Risks (Bear Case)</h4><ul style="margin:0;padding-left:16px;font-size:12px;line-height:1.8;">${s.risks.map(r=>`<li>${r}</li>`).join('')}</ul></div>
+      </div>
+      <div class="budget-calc-box">
+        <h4>With Your $${budget.toLocaleString()} Budget</h4>
+        <div class="budget-calc-row"><span>Shares you can buy</span><span class="val">${shares} share${shares!==1?'s':''}</span></div>
+        <div class="budget-calc-row"><span>Cost</span><span class="val">$${cost}</span></div>
+        <div class="budget-calc-row"><span>Remaining cash</span><span>$${remaining}</span></div>
+        ${shares>0?`
+        <div class="budget-calc-row" style="border-top:1px solid rgba(108,92,231,.2);padding-top:6px;margin-top:4px;"><span>If stock goes up 10%</span><span style="color:var(--green);font-weight:700">+$${(shares*s.price*0.10).toFixed(2)}</span></div>
+        <div class="budget-calc-row"><span>If stock goes down 10%</span><span style="color:var(--red);font-weight:700">-$${(shares*s.price*0.10).toFixed(2)}</span></div>
+        `:'<p style="color:var(--red);font-size:12px;margin-top:6px;">Budget is below the share price. Increase it or use fractional shares on Robinhood / Fidelity / Schwab.</p>'}
+      </div>
+      <div class="detail-links" style="margin-top:16px;">
+        <a class="detail-link" href="https://finance.yahoo.com/quote/${s.ticker}/" target="_blank" rel="noopener">Yahoo Finance</a>
+        <a class="detail-link" href="https://www.google.com/finance/quote/${s.ticker}:NASDAQ" target="_blank" rel="noopener">Google Finance</a>
+        <a class="detail-link" href="https://stockanalysis.com/stocks/${s.ticker.toLowerCase()}/" target="_blank" rel="noopener">Stock Analysis</a>
+        <a class="detail-link" href="https://www.tradingview.com/symbols/NASDAQ-${s.ticker}/" target="_blank" rel="noopener">TradingView</a>
+      </div>
+    </div>`;
+  document.getElementById('modalOverlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+
+  const months = ['Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','Now'];
+  if(chartInstances['detail']){try{chartInstances['detail'].destroy()}catch{}}
+  chartInstances['detail'] = new Chart(document.getElementById('detailChart'), {
+    type:'line',
+    data:{ labels:months.slice(-s.spark.length), datasets:[{ data:s.spark, label:s.ticker, borderColor:s.ytdChange>=0?'#00b894':'#d63031', borderWidth:2.5, fill:true, backgroundColor:s.ytdChange>=0?'rgba(0,184,148,.1)':'rgba(214,48,49,.1)', pointRadius:3, pointBackgroundColor:s.ytdChange>=0?'#00b894':'#d63031', tension:0.35 }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>'$'+ctx.parsed.y.toFixed(2)}}}, scales:{ x:{ticks:{color:'#888da0'},grid:{display:false}}, y:{ticks:{color:'#888da0',callback:v=>'$'+v},grid:{color:'rgba(45,48,69,.5)'}} } }
+  });
+}
+
+function closeModal(){ document.getElementById('modalOverlay').classList.remove('open'); document.body.style.overflow=''; }
+document.addEventListener('keydown', e=>{ if(e.key==='Escape')closeModal(); });
+
+// =============== STRATEGIES ===============
+function renderStrategies() {
+  document.getElementById('stratCards').innerHTML = strategies.map(st=>`
+    <div class="strat-card ${st.id===currentStrategy?'selected':''}" data-strat="${st.id}" onclick="selectStrategy('${st.id}')">
+      <div class="strat-icon">${st.icon}</div><h3>${st.name}</h3><p>${st.desc}</p>
+    </div>`).join('');
+}
+
+function selectStrategy(id) {
+  currentStrategy = id;
+  document.querySelectorAll('.strat-card').forEach(c=>c.classList.remove('selected'));
+  const el = document.querySelector(`[data-strat="${id}"]`);
+  if(el) el.classList.add('selected');
+  const strat = strategies.find(s=>s.id===id);
+  const section = document.getElementById('allocSection');
+  let rows='', totalUsed=0;
+  const pieLabels=[], pieData=[], pieColors=[];
+  const colors = ['#6c5ce7','#00cec9','#00b894','#fdcb6e','#e17055','#0984e3','#d63031','#a29bfe','#fab1a0','#81ecec','#74b9ff','#55efc4','#ffeaa7','#fd79a8','#636e72','#2d3436','#e84393','#00b894'];
+  let i=0;
+  for(const [ticker,pct] of Object.entries(strat.alloc)){
+    const stock = stocks.find(s=>s.ticker===ticker);
+    const dollars = Math.round(budget*pct);
+    const shares = (dollars/stock.price).toFixed(2);
+    totalUsed += dollars;
+    const catIcons = {'rising':'⭐ ','comeback':'🔄 '};
+    const cat = catIcons[stock.category]||'';
+    rows += `<tr onclick="openModal('${ticker}')"><td class="ticker-col">${cat}${ticker}</td><td>${stock.name}</td><td class="amount-col">$${dollars.toLocaleString()}</td><td>${(pct*100).toFixed(0)}%</td><td class="shares-col">${shares}</td></tr>`;
+    pieLabels.push(ticker); pieData.push(dollars); pieColors.push(colors[i%colors.length]); i++;
+  }
+  section.innerHTML = `
+    <div class="alloc-grid">
+      <div class="alloc-table-wrap">
+        <table class="alloc-table">
+          <thead><tr><th>Ticker</th><th>Company</th><th>Amount</th><th>Wt</th><th>~Shares</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div style="padding:10px 14px;font-size:12px;color:var(--text-dim);border-top:1px solid var(--border);">
+          Total: <strong style="color:var(--accent)">$${totalUsed.toLocaleString()}</strong> of $${budget.toLocaleString()} &bull; ⭐ Rising Star &bull; 🔄 Comeback &bull; Click any row
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <h3 style="margin-bottom:12px;font-size:14px;">$${budget.toLocaleString()} Allocation</h3>
+        <canvas id="pieChart" width="260" height="260"></canvas>
+      </div>
+    </div>`;
+  if(chartInstances['pie']){try{chartInstances['pie'].destroy()}catch{}}
+  chartInstances['pie'] = new Chart(document.getElementById('pieChart'),{
+    type:'doughnut',
+    data:{ labels:pieLabels, datasets:[{data:pieData,backgroundColor:pieColors,borderWidth:0}] },
+    options:{ responsive:false, plugins:{ legend:{position:'bottom',labels:{color:'#dfe6e9',font:{size:10},padding:8}}, tooltip:{callbacks:{label:ctx=>` ${ctx.label}: $${ctx.parsed} (${((ctx.parsed/totalUsed)*100).toFixed(0)}%)`}} }, cutout:'55%' }
+  });
+}
+
+// =============== PERFORMANCE ===============
+function renderPerfChart() {
+  const ctx = document.getElementById('perfChart');
+  const sorted = [...stocks].sort((a,b)=>b.ytdChange-a.ytdChange);
+  if(chartInstances['perf']){try{chartInstances['perf'].destroy()}catch{}}
+  chartInstances['perf'] = new Chart(ctx, {
+    type:'bar',
+    data:{ labels:sorted.map(s=>s.ticker), datasets:[{ label:'YTD Return %', data:sorted.map(s=>s.ytdChange),
+      backgroundColor:sorted.map(s=>s.category==='rising'?'rgba(253,203,110,.8)':s.category==='comeback'?'rgba(232,67,147,.7)':s.ytdChange>=0?'rgba(0,184,148,.7)':'rgba(214,48,49,.7)'),
+      borderRadius:5, barThickness:28 }] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      onClick:(e,el)=>{if(el.length)openModal(sorted[el[0].index].ticker)},
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:ctx=>`${ctx.parsed.y>=0?'+':''}${ctx.parsed.y}% — click for details`}} },
+      scales:{ x:{ticks:{color:'#888da0',font:{weight:700,size:10}},grid:{display:false}}, y:{ticks:{color:'#888da0',callback:v=>v+'%'},grid:{color:'rgba(45,48,69,.5)'}} }
+    }
+  });
+}
+
+// =============== TABS & FILTERS ===============
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+  });
+});
+document.querySelectorAll('.filter-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    renderStockCards(btn.dataset.filter);
+  });
+});
+
+// =============== AUTO-REFRESH ===============
+let refreshInterval = null;
+let nextRefreshTime = null;
+const REFRESH_INTERVALS = { '1min':60000, '5min':300000, '15min':900000, '1hr':3600000, 'off':0 };
+let currentRefreshSetting = '5min';
+
+function startAutoRefresh(key) {
+  currentRefreshSetting = key;
+  if(refreshInterval) clearInterval(refreshInterval);
+  refreshInterval = null;
+  const ms = REFRESH_INTERVALS[key];
+  if(ms > 0) {
+    refreshInterval = setInterval(()=>{ refreshPrices(); }, ms);
+    nextRefreshTime = Date.now() + ms;
+    updateCountdown();
+  }
+  // Update button states
+  document.querySelectorAll('.refresh-interval-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.interval === key);
+  });
+}
+
+function updateCountdown() {
+  const el = document.getElementById('countdown');
+  if(!el) return;
+  if(!refreshInterval || !nextRefreshTime) { el.textContent = 'Auto-refresh: Off'; return; }
+  const tick = () => {
+    const remaining = Math.max(0, nextRefreshTime - Date.now());
+    const secs = Math.ceil(remaining / 1000);
+    if(secs > 60) el.textContent = `Next refresh: ${Math.ceil(secs/60)}m`;
+    else el.textContent = `Next refresh: ${secs}s`;
+  };
+  tick();
+  if(window._countdownTimer) clearInterval(window._countdownTimer);
+  window._countdownTimer = setInterval(tick, 1000);
+}
+
+// Reset countdown after each refresh
+const _origRefresh = refreshPrices;
+refreshPrices = async function() {
+  await _origRefresh();
+  const ms = REFRESH_INTERVALS[currentRefreshSetting];
+  if(ms > 0) { nextRefreshTime = Date.now() + ms; updateCountdown(); }
+};
+
+// =============== MARKET STATUS ===============
+function getMarketStatus() {
+  const now = new Date();
+  const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const day = et.getDay();
+  const h = et.getHours();
+  const m = et.getMinutes();
+  const mins = h * 60 + m;
+  if(day === 0 || day === 6) return { open: false, label: 'Market Closed (Weekend)' };
+  if(mins >= 570 && mins < 960) return { open: true, label: 'Market Open' };
+  if(mins >= 540 && mins < 570) return { open: false, label: 'Pre-Market' };
+  if(mins >= 960 && mins < 1200) return { open: false, label: 'After Hours' };
+  return { open: false, label: 'Market Closed' };
+}
+
+// =============== INIT ===============
+async function init() {
+  renderAll();
+  await refreshPrices();
+  document.getElementById('loadingOverlay').classList.add('done');
+  setTimeout(()=>document.getElementById('loadingOverlay').style.display='none', 500);
+
+  // Inject auto-refresh controls into the header
+  const headerRight = document.querySelector('.header-right');
+  const controlsDiv = document.createElement('div');
+  controlsDiv.style.cssText = 'display:flex;flex-direction:column;gap:4px;align-items:flex-end;';
+
+  const market = getMarketStatus();
+  const marketDot = market.open ? '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:4px;"></span>' : '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--red);margin-right:4px;"></span>';
+
+  controlsDiv.innerHTML = `
+    <div style="display:flex;gap:4px;align-items:center;">
+      <span style="font-size:10px;color:var(--text-dim);margin-right:4px;">${marketDot}${market.label}</span>
+      <button class="refresh-interval-btn" data-interval="1min" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:4px;padding:3px 8px;font-size:10px;cursor:pointer;" onclick="startAutoRefresh('1min')">1m</button>
+      <button class="refresh-interval-btn active" data-interval="5min" style="background:var(--accent);border:1px solid var(--accent);color:#fff;border-radius:4px;padding:3px 8px;font-size:10px;cursor:pointer;" onclick="startAutoRefresh('5min')">5m</button>
+      <button class="refresh-interval-btn" data-interval="15min" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:4px;padding:3px 8px;font-size:10px;cursor:pointer;" onclick="startAutoRefresh('15min')">15m</button>
+      <button class="refresh-interval-btn" data-interval="1hr" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:4px;padding:3px 8px;font-size:10px;cursor:pointer;" onclick="startAutoRefresh('1hr')">1h</button>
+      <button class="refresh-interval-btn" data-interval="off" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:4px;padding:3px 8px;font-size:10px;cursor:pointer;" onclick="startAutoRefresh('off')">Off</button>
+    </div>
+    <div id="countdown" style="font-size:10px;color:var(--text-dim);"></div>
+  `;
+  headerRight.appendChild(controlsDiv);
+
+  // Start default auto-refresh
+  startAutoRefresh('5min');
+
+  // Style active refresh button
+  const style = document.createElement('style');
+  style.textContent = '.refresh-interval-btn.active{background:var(--accent)!important;border-color:var(--accent)!important;color:#fff!important;}';
+  document.head.appendChild(style);
+}
+init();
+</script>
+</body>
+</html>
